@@ -1,6 +1,7 @@
 package com.cf.data.model.poloniex;
 
-import com.google.gson.Gson;
+import com.cf.util.JsonUtils;
+
 import java.math.BigDecimal;
 
 /**
@@ -25,6 +26,6 @@ public class PoloniexFeeInfo
     @Override
     public String toString()
     {
-        return new Gson().toJson(this);
+        return JsonUtils.GSON.toJson(this);
     }
 }

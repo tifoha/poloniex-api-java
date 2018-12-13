@@ -1,6 +1,8 @@
 package com.cf.client.poloniex.wss.model;
 
-import com.google.gson.Gson;
+import com.cf.util.JsonUtils;
+
+import java.util.Objects;
 
 /**
  * Convenience subscriptions are provided. A full list of currency pair codes: 
@@ -41,8 +43,12 @@ public class PoloniexWSSSubscription {
         this.channel = channel;
     }
 
+    public PoloniexWSSSubscription(Integer channelId) {
+        this(Objects.toString(channelId));
+    }
+
     @Override
     public String toString() {
-        return new Gson().toJson(this);
+        return JsonUtils.GSON.toJson(this);
     }
 }

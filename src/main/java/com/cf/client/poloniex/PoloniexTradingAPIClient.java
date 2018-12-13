@@ -28,10 +28,10 @@ public class PoloniexTradingAPIClient implements TradingAPIClient {
     private final String apiSecret;
     private final HTTPClient client;
 
-    public PoloniexTradingAPIClient(String apiKey, String apiSecret) {
+    public PoloniexTradingAPIClient(String apiKey, String apiSecret, HTTPClient client) {
         this.apiKey = apiKey;
         this.apiSecret = apiSecret;
-        this.client = new HTTPClient();
+        this.client = client;
     }
 
     @Override

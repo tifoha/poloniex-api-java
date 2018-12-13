@@ -3,29 +3,25 @@ package com.cf.client.poloniex;
 import com.cf.ExchangeService;
 import com.cf.PriceDataAPIClient;
 import com.cf.TradingAPIClient;
+import com.cf.client.HTTPClient;
+import com.cf.client.ProxySettings;
 import com.cf.data.map.poloniex.PoloniexDataMapper;
-import com.cf.data.model.poloniex.PoloniexActiveLoanTypes;
-import com.cf.data.model.poloniex.PoloniexChartData;
-import com.cf.data.model.poloniex.PoloniexCompleteBalance;
-import com.cf.data.model.poloniex.PoloniexFeeInfo;
-import com.cf.data.model.poloniex.PoloniexOpenOrder;
-import com.cf.data.model.poloniex.PoloniexOrderResult;
-import com.cf.data.model.poloniex.PoloniexOrderTrade;
-import com.cf.data.model.poloniex.PoloniexTicker;
-import com.cf.data.model.poloniex.PoloniexTradeHistory;
-import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-
+import com.cf.data.model.poloniex.*;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import java.math.BigDecimal;
+import java.time.ZonedDateTime;
+import java.util.*;
+
 /**
- *
  * @author David
  */
 public class PoloniexExchangeService implements ExchangeService {
+    private static final int DAY = 60 * 60 * 24;
+    private static final int PUBLIC_TRADE_HISTORY_LIMIT = 50_000;
+    private static final int PRIVATE_TRADE_HISTORY_LIMIT = 10_000;
+    private static final Comparator<PoloniexTradeHistory> TRADE_HISTORY_COMPARATOR = Comparator.comparing(PoloniexTradeHistory::getGlobalTradeID);
 
     private final PriceDataAPIClient publicClient;
     private final TradingAPIClient tradingClient;
@@ -33,9 +29,10 @@ public class PoloniexExchangeService implements ExchangeService {
 
     private final static Logger LOG = LogManager.getLogger(PoloniexExchangeService.class);
 
-    public PoloniexExchangeService(String apiKey, String apiSecret) {
-        this.publicClient = new PoloniexPublicAPIClient();
-        this.tradingClient = new PoloniexTradingAPIClient(apiKey, apiSecret);
+    public PoloniexExchangeService(String apiKey, String apiSecret, ProxySettings proxySettings) {
+        HTTPClient client = proxySettings != null ? new HTTPClient(proxySettings) : new HTTPClient();
+        this.publicClient = new PoloniexPublicAPIClient(client);
+        this.tradingClient = new PoloniexTradingAPIClient(apiKey, apiSecret, client);
         this.mapper = new PoloniexDataMapper();
     }
 
@@ -49,12 +46,12 @@ public class PoloniexExchangeService implements ExchangeService {
      * *
      * Returns candlestick chart data for the given currency pair
      *
-     * @param currencyPair Examples: USDT_ETH, USDT_BTC, BTC_ETH
-     * @param periodInSeconds The candlestick chart data period. Valid values
-     * are 300 (5 min), 900 (15 minutes), 7200 (2 hours), 14400 (4 hours), 86400
-     * (daily)
+     * @param currencyPair        Examples: USDT_ETH, USDT_BTC, BTC_ETH
+     * @param periodInSeconds     The candlestick chart data period. Valid values
+     *                            are 300 (5 min), 900 (15 minutes), 7200 (2 hours), 14400 (4 hours), 86400
+     *                            (daily)
      * @param startEpochInSeconds UNIX timestamp format and used to specify the
-     * start date of the data returned
+     *                            start date of the data returned
      * @return List of PoloniexChartData
      */
     @Override
@@ -129,6 +126,20 @@ public class PoloniexExchangeService implements ExchangeService {
         }
 
         return allMarkets;
+    }
+
+    public List<PoloniexCurrency> getCurrencies() {
+        long start = System.currentTimeMillis();
+        try {
+            String currenciesDataResult = publicClient.getCurrencies();
+            List<PoloniexCurrency> currencies = mapper.mapCurrencies(currenciesDataResult);
+            LOG.debug("Retrieved and mapped {} currencies in {} ms", currencies.size(), (System.currentTimeMillis() - start));
+            return currencies;
+        } catch (Exception ex) {
+            LOG.error("Error retrieving currencies {}", ex.getMessage());
+        }
+
+        return Collections.emptyList();
     }
 
     /**
@@ -250,13 +261,13 @@ public class PoloniexExchangeService implements ExchangeService {
 
     /**
      * *
-     * Returns up to 50,000 trades for given currency pair
+     * Returns up to 50,000 trades for given currency pair of current account
      *
      * @param currencyPair Examples: USDT_ETH, USDT_BTC, BTC_ETH
      * @return List of PoloniexTradeHistory
      */
     @Override
-    public List<PoloniexTradeHistory> returnTradeHistory(String currencyPair) {
+    public List<PoloniexTradeHistory> returnAccountTradeHistory(String currencyPair) {
         long start = System.currentTimeMillis();
         List<PoloniexTradeHistory> tradeHistory = new ArrayList<PoloniexTradeHistory>();
         try {
@@ -269,6 +280,64 @@ public class PoloniexExchangeService implements ExchangeService {
         }
 
         return tradeHistory;
+    }
+
+    /**
+     * *
+     * Returns trades for one day of given currency pair
+     *
+     * @param currencyPair Examples: USDT_ETH, USDT_BTC, BTC_ETH
+     * @return List of PoloniexTradeHistory
+     */
+    @Override
+    public List<PoloniexTradeHistory> returnTradeHistory(String currencyPair) {
+        long start = System.currentTimeMillis();
+        long to = start / 1000;
+        long from = to - DAY;
+        List<PoloniexTradeHistory> tradeHistory = new ArrayList<PoloniexTradeHistory>();
+        try {
+            String tradeHistoryData = publicClient.returnTradeHistory(currencyPair, from, to);
+            tradeHistory = mapper.mapTradeHistory(tradeHistoryData);
+            LOG.trace("Retrieved and mapped {} {} trade history in {} ms", tradeHistory.size(), currencyPair, System.currentTimeMillis() - start);
+            return tradeHistory;
+        } catch (Exception ex) {
+            LOG.error("Error retrieving trade history for {} - {}", currencyPair, ex.getMessage());
+        }
+
+        return tradeHistory;
+    }
+
+    /**
+     * *
+     * Returns trades for one day of given currency pair
+     *
+     * @param currencyPair Examples: USDT_ETH, USDT_BTC, BTC_ETH
+     * @return List of PoloniexTradeHistory
+     */
+    @Override
+    public List<PoloniexTradeHistory> returnTradeHistory(String currencyPair, ZonedDateTime from, ZonedDateTime to) {
+        List<PoloniexTradeHistory> result = returnTradeHistory0(currencyPair, from, to);
+        if (result.size() >= PUBLIC_TRADE_HISTORY_LIMIT) { //need sorting and remove duplicates
+            TreeSet<PoloniexTradeHistory> sorter = new TreeSet<>(TRADE_HISTORY_COMPARATOR);
+            sorter.addAll(result);
+            return new ArrayList<>(sorter);
+        }
+        return result;
+    }
+
+    private List<PoloniexTradeHistory> returnTradeHistory0(String currencyPair, ZonedDateTime from, ZonedDateTime to) {
+        long start = System.currentTimeMillis();
+        String tradeHistoryData = publicClient.returnTradeHistory(currencyPair, from.toEpochSecond(), to.toEpochSecond());
+        List<PoloniexTradeHistory> result = mapper.mapTradeHistory(tradeHistoryData);
+        if (result.size() == PUBLIC_TRADE_HISTORY_LIMIT) {
+            ZonedDateTime minDate = Collections.min(result, TRADE_HISTORY_COMPARATOR).getDate();
+            List<PoloniexTradeHistory> additions = returnTradeHistory0(currencyPair, from, minDate);
+            additions.addAll(result);
+            LOG.trace("Retrieved and mapped {} {} trade history in {} ms", additions.size(), currencyPair, System.currentTimeMillis() - start);
+            return additions;
+        }
+        LOG.trace("Retrieved and mapped {} {} trade history in {} ms", result.size(), currencyPair, System.currentTimeMillis() - start);
+        return result;
     }
 
     @Override
@@ -291,17 +360,17 @@ public class PoloniexExchangeService implements ExchangeService {
      * *
      * Places a sell order in a given market
      *
-     * @param currencyPair Examples: USDT_ETH, USDT_BTC, BTC_ETH
-     * @param sellPrice the sell price
-     * @param amount the amount to sell
-     * @param fillOrKill Will either fill in its entirety or be completely
-     * aborted
+     * @param currencyPair      Examples: USDT_ETH, USDT_BTC, BTC_ETH
+     * @param sellPrice         the sell price
+     * @param amount            the amount to sell
+     * @param fillOrKill        Will either fill in its entirety or be completely
+     *                          aborted
      * @param immediateOrCancel Order can be partially or completely filled, but
-     * any portion of the order that cannot be filled immediately will be
-     * canceled rather than left on the order book
-     * @param postOnly A post-only order will only be placed if no portion of it
-     * fills immediately; this guarantees you will never pay the taker fee on
-     * any part of the order that fills
+     *                          any portion of the order that cannot be filled immediately will be
+     *                          canceled rather than left on the order book
+     * @param postOnly          A post-only order will only be placed if no portion of it
+     *                          fills immediately; this guarantees you will never pay the taker fee on
+     *                          any part of the order that fills
      * @return PoloniexOrderResult
      */
     @Override
@@ -323,17 +392,17 @@ public class PoloniexExchangeService implements ExchangeService {
      * *
      * Places a buy order in a given market
      *
-     * @param currencyPair Examples: USDT_ETH, USDT_BTC, BTC_ETH
-     * @param buyPrice the buy price
-     * @param amount the amount to buy
-     * @param fillOrKill Will either fill in its entirety or be completely
-     * aborted
+     * @param currencyPair      Examples: USDT_ETH, USDT_BTC, BTC_ETH
+     * @param buyPrice          the buy price
+     * @param amount            the amount to buy
+     * @param fillOrKill        Will either fill in its entirety or be completely
+     *                          aborted
      * @param immediateOrCancel Order can be partially or completely filled, but
-     * any portion of the order that cannot be filled immediately will be
-     * canceled rather than left on the order book
-     * @param postOnly A post-only order will only be placed if no portion of it
-     * fills immediately; this guarantees you will never pay the taker fee on
-     * any part of the order that fills
+     *                          any portion of the order that cannot be filled immediately will be
+     *                          canceled rather than left on the order book
+     * @param postOnly          A post-only order will only be placed if no portion of it
+     *                          fills immediately; this guarantees you will never pay the taker fee on
+     *                          any part of the order that fills
      * @return PoloniexOrderResult
      */
     @Override

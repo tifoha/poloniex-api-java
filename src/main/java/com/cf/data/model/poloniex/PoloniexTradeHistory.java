@@ -1,6 +1,7 @@
 package com.cf.data.model.poloniex;
 
-import com.google.gson.Gson;
+import com.cf.util.JsonUtils;
+
 import java.math.BigDecimal;
 import java.time.ZonedDateTime;
 
@@ -35,9 +36,49 @@ public class PoloniexTradeHistory
         this.category = category;
     }
 
+    public Long getGlobalTradeID() {
+        return globalTradeID;
+    }
+
+    public String getTradeID() {
+        return tradeID;
+    }
+
+    public ZonedDateTime getDate() {
+        return date;
+    }
+
+    public BigDecimal getRate() {
+        return rate;
+    }
+
+    public BigDecimal getAmount() {
+        return amount;
+    }
+
+    public BigDecimal getTotal() {
+        return total;
+    }
+
+    public BigDecimal getFee() {
+        return fee;
+    }
+
+    public String getOrderNumber() {
+        return orderNumber;
+    }
+
+    public String getType() {
+        return type;
+    }
+
+    public String getCategory() {
+        return category;
+    }
+
     @Override
     public String toString()
     {
-        return new Gson().toJson(this);
+        return JsonUtils.GSON.toJson(this);
     }
 }

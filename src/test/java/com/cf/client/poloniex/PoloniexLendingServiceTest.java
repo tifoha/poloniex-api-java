@@ -16,7 +16,7 @@ public class PoloniexLendingServiceTest {
     String res = "";
     BigDecimal sum = BigDecimal.ZERO;
 
-    PoloniexLendingService service = new PoloniexLendingService(apiKey, apiSecret);
+    PoloniexLendingService service = new PoloniexLendingService(apiKey, apiSecret, null);
 
     @Test
     public void returnActiveLoans() throws Exception {

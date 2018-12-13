@@ -1,11 +1,13 @@
 package com.cf.client.wss.handler;
 
 import com.cf.client.poloniex.wss.model.PoloniexWSSTicker;
-import com.google.gson.Gson;
-import java.math.BigDecimal;
-import java.util.List;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+
+import java.math.BigDecimal;
+import java.util.List;
+
+import static com.cf.util.JsonUtils.GSON;
 
 /**
  *
@@ -14,7 +16,6 @@ import org.apache.logging.log4j.Logger;
 public class TickerMessageHandler implements IMessageHandler {
 
     private final static Logger LOG = LogManager.getLogger();
-    private final static Gson GSON = new Gson();
 
     @Override
     public void handle(String message) {

@@ -1,6 +1,7 @@
 package com.cf.client.poloniex.wss.model;
 
-import com.google.gson.Gson;
+import com.cf.util.JsonUtils;
+
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -25,6 +26,6 @@ public class PoloniexOrderBook {
 
     @Override
     public String toString() {
-        return new Gson().toJson(this);
+        return JsonUtils.GSON.toJson(this);
     }
 }

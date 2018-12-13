@@ -1,8 +1,6 @@
 package com.cf.data.model.poloniex;
 
-import com.google.gson.Gson;
-
-import java.util.List;
+import com.cf.util.JsonUtils;
 
 /**
  *
@@ -24,7 +22,7 @@ public class PoloniexLendingResult
     @Override
     public String toString()
     {
-        return new Gson().toJson(this);
+        return JsonUtils.GSON.toJson(this);
     }
 
 }

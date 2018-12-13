@@ -1,54 +1,46 @@
 package com.cf.client.poloniex;
 
+import com.cf.client.poloniex.wss.model.PoloniexOrderBookEntry;
+import com.cf.client.poloniex.wss.model.PoloniexTradeEntry;
+import com.cf.client.poloniex.wss.model.PoloniexWSSSubscription;
+import com.cf.client.wss.handler.IMessageHandler;
 import com.cf.client.wss.handler.LoggingMessageHandler;
-import com.google.gson.Gson;
+import com.cf.client.wss.handler.OrderBookMessageHandler;
+import io.netty.channel.*;
+import io.netty.handler.codec.http.DefaultHttpHeaders;
+import io.netty.handler.codec.http.FullHttpResponse;
+import io.netty.handler.codec.http.websocketx.*;
+import io.netty.util.CharsetUtil;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import io.netty.channel.Channel;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelPromise;
-import io.netty.channel.SimpleChannelInboundHandler;
-import io.netty.handler.codec.http.DefaultHttpHeaders;
-import io.netty.handler.codec.http.FullHttpResponse;
-import io.netty.handler.codec.http.websocketx.CloseWebSocketFrame;
-import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
-import io.netty.handler.codec.http.websocketx.WebSocketClientHandshaker;
-import io.netty.handler.codec.http.websocketx.WebSocketClientHandshakerFactory;
-import io.netty.handler.codec.http.websocketx.WebSocketFrame;
-import io.netty.handler.codec.http.websocketx.WebSocketHandshakeException;
-import io.netty.handler.codec.http.websocketx.WebSocketVersion;
-import io.netty.util.CharsetUtil;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.util.List;
 import java.util.Map;
-import com.cf.client.wss.handler.IMessageHandler;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 
 public class PoloniexWSSClientRouter extends SimpleChannelInboundHandler<Object> {
-
     private final static Logger LOG = LogManager.getLogger();
-    private static final int MAX_FRAME_LENGTH = 1262144;
+    private static final int MAX_FRAME_LENGTH = 126214400;
+    private static final int PULSE = 1010;
 
     private final WebSocketClientHandshaker handshaker;
-    private ChannelPromise handshakeFuture;    
-    private boolean running;
-    
-    private Map<Double, IMessageHandler> subscriptions;
-    private final IMessageHandler defaultSubscriptionMessageHandler;
-    private final Gson gson;
+    private ChannelPromise handshakeFuture;
+    private volatile boolean running;
 
-    public PoloniexWSSClientRouter(URI url, Map<Double, IMessageHandler> subscriptions) throws URISyntaxException {
+    private Map<Integer, IMessageHandler> subscriptions = new ConcurrentHashMap<>();
+    private final IMessageHandler defaultSubscriptionMessageHandler;
+    private Channel channel;
+
+    public PoloniexWSSClientRouter(URI url) throws URISyntaxException {
         this(WebSocketClientHandshakerFactory
-                .newHandshaker(url, WebSocketVersion.V13, null, true, new DefaultHttpHeaders(), MAX_FRAME_LENGTH), subscriptions);
+                .newHandshaker(url, WebSocketVersion.V13, null, true, new DefaultHttpHeaders(), MAX_FRAME_LENGTH));
     }
 
-    public PoloniexWSSClientRouter(WebSocketClientHandshaker handshaker, Map<Double, IMessageHandler> subscriptions) {
+    public PoloniexWSSClientRouter(WebSocketClientHandshaker handshaker) {
         this.handshaker = handshaker;
-        this.subscriptions = subscriptions;
         this.defaultSubscriptionMessageHandler = new LoggingMessageHandler();
-        this.gson = new Gson();
     }
 
     public ChannelFuture handshakeFuture() {
@@ -62,7 +54,8 @@ public class PoloniexWSSClientRouter extends SimpleChannelInboundHandler<Object>
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) {
-        handshaker.handshake(ctx.channel());
+        Channel channel = ctx.channel();
+        handshaker.handshake(channel);
     }
 
     @Override
@@ -79,6 +72,8 @@ public class PoloniexWSSClientRouter extends SimpleChannelInboundHandler<Object>
                 running = true;
                 LOG.trace("WebSocket Client connected!");
                 handshakeFuture.setSuccess();
+                channel = ctx.channel();
+                subscribe(channel);
             } catch (WebSocketHandshakeException e) {
                 LOG.trace("WebSocket Client failed to connect");
                 running = false;
@@ -96,10 +91,14 @@ public class PoloniexWSSClientRouter extends SimpleChannelInboundHandler<Object>
         WebSocketFrame frame = (WebSocketFrame) msg;
         if (frame instanceof TextWebSocketFrame) {
             TextWebSocketFrame textFrame = (TextWebSocketFrame) frame;
-            LOG.trace("WebSocket Client received message: " + textFrame.text());
-            List results = this.gson.fromJson(textFrame.text(), List.class);
-            this.subscriptions.getOrDefault(results.get(0), this.defaultSubscriptionMessageHandler).handle(textFrame.text());
-            
+            String text = textFrame.text();
+            LOG.trace("WebSocket Client received message: " + text);
+            int channelId = getChannelId(text);
+            if (channelId == PULSE) {
+                return;
+            }
+            this.subscriptions.getOrDefault(channelId, this.defaultSubscriptionMessageHandler).handle(text);
+
         } else if (frame instanceof CloseWebSocketFrame) {
             LOG.trace("WebSocket Client received closing");
             running = false;
@@ -110,15 +109,87 @@ public class PoloniexWSSClientRouter extends SimpleChannelInboundHandler<Object>
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-        LOG.error(cause);
-        if (!handshakeFuture.isDone()) {
-            handshakeFuture.setFailure(cause);
-        }
-        running = false;
-        ctx.close();
+        LOG.error("POLONIEX WEBSOCKET ERROR");
+        cause.printStackTrace();
+//        if (!handshakeFuture.isDone()) {
+//            handshakeFuture.setFailure(cause);
+//        }
+//        running = false;
+//        ctx.close();
     }
 
     public boolean isRunning() {
         return running;
+    }
+
+    public void subscribeOnTrade(Integer currencyPairId, Consumer<PoloniexTradeEntry> tradeListener) {
+        getOrderBookHandler(currencyPairId)
+                .addTradeListener(tradeListener);
+    }
+
+    public void subscribeOnOrderBook(Integer currencyPairId, Consumer<PoloniexOrderBookEntry> orderBookListener) {
+        getOrderBookHandler(currencyPairId)
+                .addOrderBookListener(orderBookListener);
+    }
+
+    private void subscribe(Channel channel) {
+        subscriptions
+                .keySet()
+                .stream()
+                .peek(id -> LOG.trace("Subscribing on channel: {}", id))
+                .map(this::toFrame)
+                .forEach(channel::writeAndFlush);
+    }
+
+    private TextWebSocketFrame toFrame(Integer id) {
+        return new TextWebSocketFrame(new PoloniexWSSSubscription(id).toString());
+    }
+
+    private int getChannelId(String text) {
+        int endOfId = text.indexOf(','); //[121,252507198,[["o",0,"6357.13463942","0.00000000"],["o",0,"6361.88463940","0.60000000"]]]
+
+        if (endOfId < 0) {
+            endOfId = text.indexOf(']'); //[1010]
+        }
+
+        if (endOfId < 3) { //[] o_O
+            return -1;
+        }
+        try {
+            return Integer.parseInt(text.substring(1, endOfId));
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    private OrderBookMessageHandler getOrderBookHandler(Integer currencyPairId) {
+        return (OrderBookMessageHandler) subscriptions
+                .computeIfAbsent(currencyPairId, id -> {
+                    OrderBookMessageHandler orderBookMessageHandler = new OrderBookMessageHandler();
+                    if (running) {
+                        PoloniexWSSSubscription subscription = new PoloniexWSSSubscription(id);
+                        WebSocketFrame frame = new TextWebSocketFrame(subscription.toString());
+                        channel.writeAndFlush(frame);
+                    }
+                    return orderBookMessageHandler;
+                });
+    }
+
+    public void unsubscribeOrderBook(Integer channelId, Consumer<PoloniexOrderBookEntry> listener) {
+        subscriptions.computeIfPresent(channelId, (integer, iMessageHandler) -> {
+            ((OrderBookMessageHandler) iMessageHandler).removeOrderBookListener(listener);
+            return iMessageHandler;
+        });
+    }
+
+    public void unsubscribeTrade(Integer channelId, Consumer<PoloniexTradeEntry> listener) {
+        subscriptions.computeIfPresent(channelId, (integer, iMessageHandler) -> {
+            ((OrderBookMessageHandler) iMessageHandler).removeTradeListener(listener);
+            return iMessageHandler;
+        });
+    }
+
+    public void stop() {
+        running = false;
     }
 }

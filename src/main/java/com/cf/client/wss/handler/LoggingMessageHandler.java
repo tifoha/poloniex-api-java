@@ -13,7 +13,7 @@ public class LoggingMessageHandler implements IMessageHandler {
 
     @Override
     public void handle(String message) {
-        LOG.info(message);
+        LOG.debug(message);
     }
 
 }

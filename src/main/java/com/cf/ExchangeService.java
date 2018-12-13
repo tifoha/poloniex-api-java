@@ -1,15 +1,9 @@
 package com.cf;
 
-import com.cf.data.model.poloniex.PoloniexActiveLoanTypes;
-import com.cf.data.model.poloniex.PoloniexChartData;
-import com.cf.data.model.poloniex.PoloniexCompleteBalance;
-import com.cf.data.model.poloniex.PoloniexFeeInfo;
-import com.cf.data.model.poloniex.PoloniexOpenOrder;
-import com.cf.data.model.poloniex.PoloniexOrderResult;
-import com.cf.data.model.poloniex.PoloniexOrderTrade;
-import com.cf.data.model.poloniex.PoloniexTicker;
-import com.cf.data.model.poloniex.PoloniexTradeHistory;
+import com.cf.data.model.poloniex.*;
+
 import java.math.BigDecimal;
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -46,7 +40,11 @@ public interface ExchangeService {
 
     public List<PoloniexOpenOrder> returnOpenOrders(String currencyName);
 
+    public List<PoloniexTradeHistory> returnAccountTradeHistory(String currencyPair);
+
     public List<PoloniexTradeHistory> returnTradeHistory(String currencyPair);
+
+    public List<PoloniexTradeHistory> returnTradeHistory(String currencyPair, ZonedDateTime from, ZonedDateTime to);
 
     public List<PoloniexOrderTrade> returnOrderTrades(String orderNumber);
 

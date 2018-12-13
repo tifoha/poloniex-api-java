@@ -1,14 +1,14 @@
 package com.cf.data.model.poloniex;
 
-import com.google.gson.Gson;
+import com.cf.util.JsonUtils;
+
 import java.math.BigDecimal;
 
 /**
- *
  * @author David
  */
-public class PoloniexTicker
-{
+public class PoloniexTicker {
+    public final Integer id;
     public final BigDecimal last;
     public final BigDecimal lowestAsk;
     public final BigDecimal highestBid;
@@ -16,8 +16,8 @@ public class PoloniexTicker
     public final BigDecimal baseVolume;
     public final BigDecimal quoteVolume;
 
-    public PoloniexTicker(BigDecimal last, BigDecimal lowestAsk, BigDecimal highestBid, BigDecimal percentChange, BigDecimal baseVolume, BigDecimal quoteVolume)
-    {
+    public PoloniexTicker(Integer id, BigDecimal last, BigDecimal lowestAsk, BigDecimal highestBid, BigDecimal percentChange, BigDecimal baseVolume, BigDecimal quoteVolume) {
+        this.id = id;
         this.last = last;
         this.lowestAsk = lowestAsk;
         this.highestBid = highestBid;
@@ -27,8 +27,7 @@ public class PoloniexTicker
     }
 
     @Override
-    public String toString()
-    {
-        return new Gson().toJson(this);
+    public String toString() {
+        return JsonUtils.GSON.toJson(this);
     }
 }

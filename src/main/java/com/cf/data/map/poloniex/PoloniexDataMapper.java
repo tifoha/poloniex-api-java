@@ -1,27 +1,12 @@
 package com.cf.data.map.poloniex;
 
-import com.cf.data.model.poloniex.PoloniexActiveLoanTypes;
-import com.cf.data.model.poloniex.PoloniexChartData;
-import com.cf.data.model.poloniex.PoloniexCompleteBalance;
-import com.cf.data.model.poloniex.PoloniexFeeInfo;
-import com.cf.data.model.poloniex.PoloniexLendingHistory;
-import com.cf.data.model.poloniex.PoloniexLendingResult;
-import com.cf.data.model.poloniex.PoloniexLoanOffer;
-import com.cf.data.model.poloniex.PoloniexOpenOrder;
-import com.cf.data.model.poloniex.PoloniexOrderResult;
-import com.cf.data.model.poloniex.PoloniexOrderTrade;
-import com.cf.data.model.poloniex.PoloniexTicker;
-import com.cf.data.model.poloniex.PoloniexTradeHistory;
+import com.cf.data.model.poloniex.*;
 import com.cf.data.model.poloniex.deserialize.PoloniexChartDataDeserializer;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonDeserializationContext;
-import com.google.gson.JsonDeserializer;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParseException;
-import com.google.gson.JsonSyntaxException;
+import com.google.gson.*;
 import com.google.gson.reflect.TypeToken;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 import java.lang.reflect.Type;
 import java.math.BigDecimal;
 import java.time.ZoneOffset;
@@ -31,16 +16,12 @@ import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-
 /**
- *
  * @author David
  */
 public class PoloniexDataMapper {
 
-    private final Gson gson;
+    public final Gson gson;
 
     private final static Logger LOGGER = LogManager.getLogger();
     private final static DateTimeFormatter DTF = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneOffset.UTC);
@@ -175,4 +156,31 @@ public class PoloniexDataMapper {
         return plr;
     }
 
+    public List<PoloniexCurrency> mapCurrencies(String data) {
+        try {
+            Type type = new TypeToken<LinkedHashMap<String, Map<String, Object>>>() {
+            }.getType();
+            Map<String, Map<String, Object>> currencyMap = gson.fromJson(data, type);
+            return currencyMap
+                    .entrySet()
+                    .stream()
+                    .map(e -> {
+                        Map<String, Object> map = e.getValue();
+                        PoloniexCurrency currency = new PoloniexCurrency();
+                        currency.setId(((Number) map.get("id")).intValue());
+                        currency.setSymbol(e.getKey());
+                        currency.setName((String) map.get("name"));
+                        currency.setTxFee(new BigDecimal((String) map.get("txFee")));
+                        currency.setMinConf(((Number) map.get("minConf")).intValue());
+                        currency.setDepositAddress((String) map.get("depositAddress"));
+                        currency.setDisabled(Objects.equals(1.0, map.get("disabled")));
+                        currency.setDelisted(Objects.equals(1.0, map.get("delisted")));
+                        currency.setFrozen(Objects.equals(1.0, map.get("frozen")));
+                        return currency;
+                    }).collect(Collectors.toList());
+        } catch (JsonSyntaxException | DateTimeParseException ex) {
+            LOGGER.error("Exception mapping chart data {} - {}", data, ex.getMessage());
+            return Collections.emptyList();
+        }
+    }
 }
